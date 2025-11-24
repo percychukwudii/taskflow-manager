@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Trash2, Moon, Sun } from "lucide-react";
-import { Toaster } from "@/components/ui/sonner";  
-import { toast } from "sonner";                    
+import { Toaster, toast } from "sonner";
 
+// REMOVED database imports - they don't work in client components
 interface Task {
-  id: string;
+  id: number;
   text: string;
   completed: boolean;
+  created_at?: string;
 }
 
 export default function Home() {
@@ -22,24 +23,30 @@ export default function Home() {
   const [newTask, setNewTask] = useState("");
   const [darkMode, setDarkMode] = useState(false);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Load from localStorage
   useEffect(() => {
-    const savedTasks = localStorage.getItem("tasks");
+    fetchTasks();
     const savedTheme = localStorage.getItem("darkMode");
-    if (savedTasks) setTasks(JSON.parse(savedTasks));
     if (savedTheme === "true") {
       setDarkMode(true);
       document.documentElement.classList.add("dark");
     }
   }, []);
 
-  // Save tasks
-  useEffect(() => {
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-  }, [tasks]);
+  // Updated to use API route
+  const fetchTasks = async () => {
+    try {
+      const response = await fetch('/api/tasks');
+      if (!response.ok) throw new Error('Failed to fetch tasks');
+      const result = await response.json();
+      setTasks(result);
+    } catch (error) {
+      console.error("Failed to fetch tasks:", error);
+      toast.error("Failed to load tasks");
+    }
+  };
 
-  // Dark mode toggle
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
     if (!darkMode) {
@@ -51,39 +58,77 @@ export default function Home() {
     }
   };
 
-  const addTask = () => {
+  // Updated to use API route
+  const addTask = async () => {
     if (!newTask.trim()) return;
-    const task: Task = {
-      id: Date.now().toString(),
-      text: newTask,
-      completed: false,
-    };
-    setTasks([task, ...tasks]);
-    setNewTask("");
-    setOpen(false);
-    toast.success("Task added");
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: newTask.trim() }),
+      });
+
+      if (!response.ok) throw new Error('Failed to add task');
+
+      setNewTask("");
+      setOpen(false);
+      toast.success("Task added");
+      fetchTasks();
+    } catch (error) {
+      console.error("Failed to add task:", error);
+      toast.error("Failed to add task");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggleTask = (id: string) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  // Updated to use API route
+  const toggleTask = async (id: number, completed: boolean) => {
+    try {
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ completed: !completed }),
+      });
+
+      if (!response.ok) throw new Error('Failed to update task');
+
+      fetchTasks();
+    } catch (error) {
+      console.error("Failed to update task:", error);
+      toast.error("Failed to update task");
+    }
   };
 
-  const deleteTask = (id: string) => {
-    const task = tasks.find(t => t.id === id);
-    setTasks(tasks.filter(t => t.id !== id));
-    toast.error("Task deleted", { description: task?.text });
-  };
+  // Updated to use API route
+  const deleteTask = async (id: number) => {
+    try {
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: 'DELETE',
+      });
 
-  const activeTasks = tasks.filter(t => !t.completed).length;
+      if (!response.ok) throw new Error('Failed to delete task');
+
+      toast.error("Task deleted");
+      fetchTasks();
+    } catch (error) {
+      console.error("Failed to delete task:", error);
+      toast.error("Failed to delete task");
+    }
+  };
 
   return (
     <>
-      <Toaster position="bottom-center" richColors /> {/* ← Add this line */}
+      <Toaster position="bottom-center" richColors />
 
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
         <div className="max-w-2xl mx-auto p-6 pt-12">
-
-          {/* Header */}
           <div className="flex justify-between items-center mb-10">
             <h1 className="text-4xl font-bold text-gray-900 dark:text-white">TaskFlow</h1>
             <Button variant="outline" size="icon" onClick={toggleDarkMode} className="rounded-full">
@@ -91,7 +136,6 @@ export default function Home() {
             </Button>
           </div>
 
-          {/* Add Task Dialog */}
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button className="w-full mb-8" size="lg">
@@ -99,55 +143,50 @@ export default function Home() {
               </Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add a new task</DialogTitle>
-              </DialogHeader>
+              <DialogHeader><DialogTitle>Add a new task</DialogTitle></DialogHeader>
               <div className="space-y-4 pt-4">
-                <div>
-                  <Label htmlFor="task">Task description</Label>
-                  <Input
-                    id="task"
-                    value={newTask}
-                    onChange={(e) => setNewTask(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addTask()}
-                    placeholder="e.g. Finish the Next.js project"
-                    autoFocus
-                  />
-                </div>
-                <Button onClick={addTask} className="w-full">Add Task</Button>
+                <Label htmlFor="task">Task description</Label>
+                <Input
+                  id="task"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTask()}
+                  placeholder="e.g. Deploy to Vercel"
+                  autoFocus
+                />
+                <Button onClick={addTask} className="w-full" disabled={loading}>
+                  {loading ? "Adding..." : "Add Task"}
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
 
-          {/* Stats */}
-          <div className="text-center mb-8 text-gray-600 dark:text-gray-400">
-            {tasks.length === 0 ? (
-              <p>No tasks yet. Add one to get started!</p>
-            ) : (
-              <p>{activeTasks} active {activeTasks === 1 ? "task" : "tasks"} • {tasks.length - activeTasks} completed</p>
-            )}
-          </div>
-
-          {/* Task List */}
           <div className="space-y-3">
-            {tasks.map((task) => (
-              <Card key={task.id} className="p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-center gap-4">
-                  <Checkbox checked={task.completed} onCheckedChange={() => toggleTask(task.id)} />
-                  <span className={`flex-1 text-lg ${task.completed ? "line-through text-gray-500" : "text-gray-900 dark:text-white"}`}>
-                    {task.text}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deleteTask(task.id)}
-                    className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </Card>
-            ))}
+            {tasks.length === 0 ? (
+              <p className="text-center text-gray-500 py-10">No tasks yet. Add one!</p>
+            ) : (
+              tasks.map((task) => (
+                <Card key={task.id} className="p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-4">
+                    <Checkbox
+                      checked={task.completed}
+                      onCheckedChange={() => toggleTask(task.id, task.completed)}
+                    />
+                    <span className={`flex-1 text-lg ${task.completed ? "line-through text-gray-500" : "text-gray-900 dark:text-white"}`}>
+                      {task.text}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteTask(task.id)}
+                      className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </Card>
+              ))
+            )}
           </div>
         </div>
       </div>
